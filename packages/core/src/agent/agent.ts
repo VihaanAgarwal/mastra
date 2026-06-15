@@ -1237,6 +1237,7 @@ export class Agent<
       errorProcessors,
       logger: this.logger,
       agentName: this.name,
+      agent: this,
       processorStates,
     });
   }

@@ -6,6 +6,8 @@ import type { ObservabilityContext } from '@mastra/core/observability';
 import type { RequestContext } from '@mastra/core/request-context';
 
 import { omDebug } from './debug';
+import { getBuiltInExtractedValues, mergeExtractedValues, mergeExtractionFailures } from './extracted-values';
+import { extractStructuredValues } from './extraction-runner';
 import type { ModelByInputTokens } from './model-by-input-tokens';
 import type { ObserverAttachmentFilter } from './observer-agent';
 import {
@@ -44,12 +46,24 @@ export interface ObserverExchange {
     currentTask?: string;
     suggestedContinuation?: string;
     threadTitle?: string;
+    extractedValues?: Record<string, unknown>;
+    extractionFailures?: Array<{ slug: string; error: string }>;
     degenerate?: boolean;
   };
   model: string;
   inputTokens: number;
   isMultiThread: boolean;
   retriedDueToDegenerate: boolean;
+}
+
+function filterObserverExtractors(
+  extractors: ResolvedObservationConfig['extractors'],
+  skipContinuationHints?: boolean,
+) {
+  if (!skipContinuationHints) {
+    return extractors;
+  }
+  return extractors.filter(extractor => extractor.slug !== 'current-task' && extractor.slug !== 'suggested-response');
 }
 
 export class ObserverRunner {
@@ -88,6 +102,7 @@ export class ObserverRunner {
         isMultiThread,
         this.observationConfig.instruction,
         this.observationConfig.threadTitle,
+        this.observationConfig.extractors,
       ),
       model,
     });
@@ -169,6 +184,7 @@ export class ObserverRunner {
       priorCurrentTask?: string;
       priorSuggestedResponse?: string;
       priorThreadTitle?: string;
+      priorExtractedValues?: Record<string, unknown>;
       wasTruncated?: boolean;
       model?: ConcreteObservationModel;
     },
@@ -177,11 +193,17 @@ export class ObserverRunner {
     currentTask?: string;
     suggestedContinuation?: string;
     threadTitle?: string;
+    extractedValues?: Record<string, unknown>;
+    extractionFailures?: Array<{ slug: string; error: string }>;
     usage?: { inputTokens?: number; outputTokens?: number; totalTokens?: number };
   }> {
     const inputTokens = this.tokenCounter.countMessages(messagesToObserve);
     const resolvedModel = options?.model ? { model: options.model } : this.resolveModel(inputTokens);
     const agent = this.createAgent(resolvedModel.model);
+    const activeExtractors = filterObserverExtractors(
+      this.observationConfig.extractors,
+      options?.skipContinuationHints,
+    );
 
     const attachmentFilter = this.resolveAttachmentFilter(resolvedModel.model, options?.requestContext);
 
@@ -191,6 +213,7 @@ export class ObserverRunner {
         content: buildObserverTaskPrompt(existingObservations, {
           ...options,
           includeThreadTitle: this.observationConfig.threadTitle,
+          extractors: activeExtractors,
         }),
       },
       buildObserverHistoryMessage(messagesToObserve, {
@@ -235,13 +258,13 @@ export class ObserverRunner {
     };
 
     let result = await doGenerate();
-    let parsed = parseObserverOutput(result.text);
+    let parsed = parseObserverOutput(result.text, activeExtractors);
     let retriedDueToDegenerate = false;
 
     if (parsed.degenerate) {
       omDebug(`[OM:callObserver] degenerate repetition detected, retrying once`);
       result = await doGenerate();
-      parsed = parseObserverOutput(result.text);
+      parsed = parseObserverOutput(result.text, activeExtractors);
       retriedDueToDegenerate = true;
       if (parsed.degenerate) {
         omDebug(`[OM:callObserver] degenerate repetition on retry, failing`);
@@ -249,10 +272,27 @@ export class ObserverRunner {
       }
     }
 
+    const structuredExtraction = await extractStructuredValues({
+      agent,
+      source: 'observer',
+      extractors: activeExtractors,
+      sourceMessages: observerMessages,
+      sourceOutput: result.text,
+      observations: parsed.observations,
+      priorExtractedValues: options?.priorExtractedValues,
+      requestContext: options?.requestContext,
+      observabilityContext: options?.observabilityContext,
+      abortSignal,
+    });
+    const extractedValues = mergeExtractedValues(parsed.extractedValues, structuredExtraction.values);
+    const extractionFailures = mergeExtractionFailures(parsed.extractionFailures, structuredExtraction.failures);
+    const builtIns = getBuiltInExtractedValues(extractedValues);
+
     const systemPrompt = buildObserverSystemPrompt(
       false,
       this.observationConfig.instruction,
       this.observationConfig.threadTitle,
+      activeExtractors,
     );
     this.lastExchange = {
       systemPrompt,
@@ -260,9 +300,11 @@ export class ObserverRunner {
       rawOutput: result.text,
       parsedResult: {
         observations: parsed.observations,
-        currentTask: parsed.currentTask,
-        suggestedContinuation: parsed.suggestedContinuation,
-        threadTitle: parsed.threadTitle,
+        currentTask: builtIns.currentTask ?? parsed.currentTask,
+        suggestedContinuation: builtIns.suggestedContinuation ?? parsed.suggestedContinuation,
+        threadTitle: builtIns.threadTitle ?? parsed.threadTitle,
+        extractedValues,
+        extractionFailures,
         degenerate: parsed.degenerate,
       },
       model: String(resolvedModel.model),
@@ -275,9 +317,11 @@ export class ObserverRunner {
 
     return {
       observations: parsed.observations,
-      currentTask: parsed.currentTask,
-      suggestedContinuation: parsed.suggestedContinuation,
-      threadTitle: parsed.threadTitle,
+      currentTask: builtIns.currentTask ?? parsed.currentTask,
+      suggestedContinuation: builtIns.suggestedContinuation ?? parsed.suggestedContinuation,
+      threadTitle: builtIns.threadTitle ?? parsed.threadTitle,
+      extractedValues,
+      extractionFailures,
       usage: usage
         ? { inputTokens: usage.inputTokens, outputTokens: usage.outputTokens, totalTokens: usage.totalTokens }
         : undefined,
@@ -293,13 +337,23 @@ export class ObserverRunner {
     threadOrder: string[],
     abortSignal?: AbortSignal,
     requestContext?: RequestContext,
-    priorMetadataByThread?: Map<string, { currentTask?: string; suggestedResponse?: string; threadTitle?: string }>,
+    priorMetadataByThread?: Map<
+      string,
+      { currentTask?: string; suggestedResponse?: string; threadTitle?: string; extracted?: Record<string, unknown> }
+    >,
     observabilityContext?: ObservabilityContext,
     model?: ConcreteObservationModel,
   ): Promise<{
     results: Map<
       string,
-      { observations: string; currentTask?: string; suggestedContinuation?: string; threadTitle?: string }
+      {
+        observations: string;
+        currentTask?: string;
+        suggestedContinuation?: string;
+        threadTitle?: string;
+        extractedValues?: Record<string, unknown>;
+        extractionFailures?: Array<{ slug: string; error: string }>;
+      }
     >;
     usage?: { inputTokens?: number; outputTokens?: number; totalTokens?: number };
   }> {
@@ -321,6 +375,7 @@ export class ObserverRunner {
           priorMetadataByThread,
           undefined,
           this.observationConfig.threadTitle,
+          this.observationConfig.extractors,
         ),
       },
       buildMultiThreadObserverHistoryMessage(messagesByThread, threadOrder, {
@@ -371,13 +426,13 @@ export class ObserverRunner {
     };
 
     let result = await doGenerate();
-    let parsed = parseMultiThreadObserverOutput(result.text);
+    let parsed = parseMultiThreadObserverOutput(result.text, this.observationConfig.extractors);
     let retriedDueToDegenerate = false;
 
     if (parsed.degenerate) {
       omDebug(`[OM:callMultiThreadObserver] degenerate repetition detected, retrying once`);
       result = await doGenerate();
-      parsed = parseMultiThreadObserverOutput(result.text);
+      parsed = parseMultiThreadObserverOutput(result.text, this.observationConfig.extractors);
       retriedDueToDegenerate = true;
       if (parsed.degenerate) {
         omDebug(`[OM:callMultiThreadObserver] degenerate repetition on retry, failing`);
@@ -385,10 +440,57 @@ export class ObserverRunner {
       }
     }
 
+    const structuredExtractionResults = await Promise.all(
+      Array.from(parsed.threads, async ([threadId, threadResult]) => {
+        const threadMessages = messagesByThread.get(threadId) ?? [];
+        const structuredExtraction = await extractStructuredValues({
+          agent,
+          source: 'observer',
+          extractors: this.observationConfig.extractors,
+          sourceMessages: [
+            {
+              role: 'user',
+              content: buildMultiThreadObserverTaskPrompt(
+                existingObservations,
+                [threadId],
+                priorMetadataByThread,
+                undefined,
+                this.observationConfig.threadTitle,
+                this.observationConfig.extractors,
+              ),
+            },
+            buildMultiThreadObserverHistoryMessage(new Map([[threadId, threadMessages]]), [threadId], {
+              attachmentFilter: multiThreadAttachmentFilter,
+            }),
+          ],
+          sourceOutput: result.text,
+          observations: threadResult.observations,
+          priorExtractedValues: priorMetadataByThread?.get(threadId)?.extracted,
+          requestContext,
+          observabilityContext,
+          abortSignal,
+        });
+        return [threadId, structuredExtraction] as const;
+      }),
+    );
+    const structuredExtractionByThread = new Map(structuredExtractionResults);
+
+    const aggregatedExtractedValues = mergeExtractedValues(
+      ...Array.from(parsed.threads, ([threadId, threadResult]) =>
+        mergeExtractedValues(threadResult.extractedValues, structuredExtractionByThread.get(threadId)?.values),
+      ),
+    );
+    const aggregatedExtractionFailures = mergeExtractionFailures(
+      ...Array.from(parsed.threads, ([threadId, threadResult]) =>
+        mergeExtractionFailures(threadResult.extractionFailures, structuredExtractionByThread.get(threadId)?.failures),
+      ),
+    );
+    const aggregatedBuiltIns = getBuiltInExtractedValues(aggregatedExtractedValues);
     const systemPrompt = buildObserverSystemPrompt(
       true,
       this.observationConfig.instruction,
       this.observationConfig.threadTitle,
+      this.observationConfig.extractors,
     );
     this.lastExchange = {
       systemPrompt,
@@ -398,10 +500,16 @@ export class ObserverRunner {
         observations: Array.from(parsed.threads.values())
           .map(t => t.observations)
           .join('\n'),
-        threadTitle: Array.from(parsed.threads.values())
-          .map(t => t.threadTitle)
-          .filter(Boolean)
-          .join(', '),
+        currentTask: aggregatedBuiltIns.currentTask,
+        suggestedContinuation: aggregatedBuiltIns.suggestedContinuation,
+        threadTitle:
+          aggregatedBuiltIns.threadTitle ??
+          Array.from(parsed.threads.values())
+            .map(t => t.threadTitle)
+            .filter(Boolean)
+            .join(', '),
+        extractedValues: aggregatedExtractedValues,
+        extractionFailures: aggregatedExtractionFailures,
         degenerate: parsed.degenerate,
       },
       model: String(resolvedModel.model),
@@ -412,14 +520,30 @@ export class ObserverRunner {
 
     const results = new Map<
       string,
-      { observations: string; currentTask?: string; suggestedContinuation?: string; threadTitle?: string }
+      {
+        observations: string;
+        currentTask?: string;
+        suggestedContinuation?: string;
+        threadTitle?: string;
+        extractedValues?: Record<string, unknown>;
+        extractionFailures?: Array<{ slug: string; error: string }>;
+      }
     >();
     for (const [threadId, threadResult] of parsed.threads) {
+      const structuredExtraction = structuredExtractionByThread.get(threadId);
+      const extractedValues = mergeExtractedValues(threadResult.extractedValues, structuredExtraction?.values);
+      const extractionFailures = mergeExtractionFailures(
+        threadResult.extractionFailures,
+        structuredExtraction?.failures,
+      );
+      const builtIns = getBuiltInExtractedValues(extractedValues);
       results.set(threadId, {
         observations: threadResult.observations,
-        currentTask: threadResult.currentTask,
-        suggestedContinuation: threadResult.suggestedContinuation,
-        threadTitle: threadResult.threadTitle,
+        currentTask: builtIns.currentTask ?? threadResult.currentTask,
+        suggestedContinuation: builtIns.suggestedContinuation ?? threadResult.suggestedContinuation,
+        threadTitle: builtIns.threadTitle ?? threadResult.threadTitle,
+        extractedValues,
+        extractionFailures,
       });
     }
 
