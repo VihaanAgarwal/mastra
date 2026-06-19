@@ -1,5 +1,80 @@
 # @mastra/playground-ui
 
+## 35.1.0-alpha.0
+
+### Minor Changes
+
+- Improved command palette keyboard handling, input affordance/style slots, scroll-area-backed lists, shortcut labels, overlay behavior, and inline examples. ([#18142](https://github.com/mastra-ai/mastra/pull/18142))
+
+- Added a multiple-selection mode to the Combobox component and removed the separate MultiCombobox export. ([#18166](https://github.com/mastra-ai/mastra/pull/18166))
+
+  Use the shared Combobox API for both single and multiple selection:
+
+  ```tsx
+  <Combobox multiple value={selectedValues} onValueChange={setSelectedValues} options={options} />
+  ```
+
+  Storybook now includes examples for the single and multiple selection flows. Command item icons now render without an extra icon background.
+
+- Removed the default DataList variant. DataList now uses the lined treatment when no variant is provided; use variant="striped" only when zebra rows are needed. ([#18218](https://github.com/mastra-ai/mastra/pull/18218))
+
+  **Before**
+
+  ```tsx
+  <DataList columns={columns} variant="default" />
+  ```
+
+  **After**
+
+  ```tsx
+  <DataList columns={columns} />
+  ```
+
+- Added helpers for working with remote and cloud-storage media URLs, used by the Studio agent chat composer so media can be attached by URL and forwarded to the model untouched instead of only being uploaded as inlined base64. ([#18149](https://github.com/mastra-ai/mastra/pull/18149))
+  - Recognizes cloud-storage URIs (`gs://`, `s3://`) so they are passed through and resolved server-side by the model provider.
+  - Recognizes video and audio URLs and renders them as a labeled file chip with the correct icon instead of a broken preview.
+
+  New exports:
+
+  ```ts
+  import { isRemoteUrl, isBrowserFetchableUrl, isNonFetchableRemoteUrl } from '@mastra/playground-ui';
+
+  isRemoteUrl('gs://my-bucket/clip.mp4'); // true
+  isBrowserFetchableUrl('gs://my-bucket/clip.mp4'); // false (resolved server-side)
+  isBrowserFetchableUrl('https://example.com/clip.mp4'); // true
+  ```
+
+### Patch Changes
+
+- Removed `ScrollableContainer`. Use `ScrollArea` with the `scrollButtons` prop for horizontal scroll controls. ([#18220](https://github.com/mastra-ai/mastra/pull/18220))
+
+  **Before**
+
+  ```tsx
+  import { ScrollableContainer } from '@mastra/playground-ui';
+
+  <ScrollableContainer>{items}</ScrollableContainer>;
+  ```
+
+  **After**
+
+  ```tsx
+  import { ScrollArea } from '@mastra/playground-ui';
+
+  <ScrollArea orientation="horizontal" scrollButtons>
+    {items}
+  </ScrollArea>;
+  ```
+
+- Fixed DataList selection headers so grouped header cells no longer cover select-all checkboxes. ([#18221](https://github.com/mastra-ai/mastra/pull/18221))
+
+- Fixed line wrapping for JSON content in CodeEditor and tool result panels. Long JSON strings and tool outputs now wrap within the panel width instead of requiring horizontal scrolling. ([#18214](https://github.com/mastra-ai/mastra/pull/18214))
+
+- Updated dependencies [[`417baae`](https://github.com/mastra-ai/mastra/commit/417baae40b995db5819c845036947f0c27dc1c00), [`417baae`](https://github.com/mastra-ai/mastra/commit/417baae40b995db5819c845036947f0c27dc1c00), [`c0eda2b`](https://github.com/mastra-ai/mastra/commit/c0eda2bcd91a228427314b12c91d8b147f3a739f), [`c0eda2b`](https://github.com/mastra-ai/mastra/commit/c0eda2bcd91a228427314b12c91d8b147f3a739f), [`b13925b`](https://github.com/mastra-ai/mastra/commit/b13925bfa91aa8700f56fa54a9ce707ee7e4ba62), [`073f910`](https://github.com/mastra-ai/mastra/commit/073f910481e7d94b95ba3830f96531774ae95d33), [`1f97ce5`](https://github.com/mastra-ai/mastra/commit/1f97ce5695463bebb4eaacf501da6fb403e20885), [`64f58c0`](https://github.com/mastra-ai/mastra/commit/64f58c04e78b40137497d47f781e897e416f22a5), [`417baae`](https://github.com/mastra-ai/mastra/commit/417baae40b995db5819c845036947f0c27dc1c00), [`417baae`](https://github.com/mastra-ai/mastra/commit/417baae40b995db5819c845036947f0c27dc1c00), [`417baae`](https://github.com/mastra-ai/mastra/commit/417baae40b995db5819c845036947f0c27dc1c00)]:
+  - @mastra/core@1.46.0-alpha.0
+  - @mastra/client-js@1.26.1-alpha.0
+  - @mastra/react@1.1.1-alpha.0
+
 ## 35.0.0
 
 ### Minor Changes

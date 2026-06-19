@@ -1,5 +1,166 @@
 # @mastra/core
 
+## 1.46.0-alpha.0
+
+### Minor Changes
+
+- Removed the deprecated `Harness.getState()` and `Harness.setState()` compatibility wrappers, along with the unused private `updateState`. Harness state has lived on the session for a while; these were thin proxies marked `@deprecated`. ([#18200](https://github.com/mastra-ai/mastra/pull/18200))
+
+  **Before**
+
+  ```typescript
+  const state = harness.getState();
+  await harness.setState({ count: 1 });
+  ```
+
+  **After**
+
+  ```typescript
+  const state = harness.session.state.get();
+  await harness.session.state.set({ count: 1 });
+  ```
+
+  This does not affect the tool-facing harness context, which continues to expose `state` / `getState` / `setState` / `updateState` alongside `session.state`.
+
+  `mastracode` is updated to set browser settings via `session.state.set()`.
+
+- Moved the observational-memory model accessors off the Harness onto `session.om`. Reading and switching the observer/reflector models and reading observation/reflection thresholds now live on the session, next to the state they read and write. ([#18200](https://github.com/mastra-ai/mastra/pull/18200))
+
+  **Before**
+
+  ```typescript
+  const observer = harness.getObserverModelId();
+  await harness.switchObserverModel({ modelId: 'openai/gpt-4o' });
+  ```
+
+  **After**
+
+  ```typescript
+  const observer = harness.session.om.observer.modelId();
+  await harness.session.om.observer.switchModel({ modelId: 'openai/gpt-4o' });
+  ```
+
+  The accessors are grouped by role under `session.om.observer` and `session.om.reflector`, each exposing `modelId()`, `threshold()`, `resolvedModel()`, and `switchModel({ modelId })`.
+
+  Removed `Harness.getObserverModelId`, `getReflectorModelId`, `getObservationThreshold`, `getReflectionThreshold`, `getResolvedObserverModel`, `getResolvedReflectorModel`, `switchObserverModel`, and `switchReflectorModel`.
+
+  `mastracode` is updated to consume the new API: the `/om` command and status line now read and switch observer/reflector models via `session.om`.
+
+- Replaced `Harness.switchModel()` with `harness.session.model.switch()`. Model switching now lives on the session, alongside the active mode/model state it already owns. ([#18197](https://github.com/mastra-ai/mastra/pull/18197))
+
+  **Before**
+
+  ```typescript
+  await harness.switchModel({ modelId: 'openai/gpt-5' });
+  ```
+
+  **After**
+
+  ```typescript
+  await harness.session.model.switch({ modelId: 'openai/gpt-5' });
+  ```
+
+- Replaced `Harness.switchMode()` with `harness.session.mode.switch()`. Switching modes now lives on the session, alongside the active mode/model state it already owns. ([#18197](https://github.com/mastra-ai/mastra/pull/18197))
+
+  **Before**
+
+  ```typescript
+  await harness.switchMode({ modeId: 'build' });
+  ```
+
+  **After**
+
+  ```typescript
+  await harness.session.mode.switch({ modeId: 'build' });
+  ```
+
+  `mastracode` is updated to consume the new API: the TUI and headless callers now invoke `harness.session.mode.switch()` instead of the removed `harness.switchMode()`.
+
+- Collapsed the result of `agent.sendSignal` / `sendMessage` / `queueMessage` / `sendStateSignal` / `sendNotificationSignal` into a single `accepted` promise that resolves at decision-time to a discriminated union: `{ action: 'wake'; runId; output }` when the signal started a run in this process, `{ action: 'deliver'; runId }` when it was forwarded onto an existing run, or `{ action: 'persist' }` / `{ action: 'discard' }` when nothing ran. `runId` is present only on `wake`/`deliver`; for `persist`/`discard` correlate via `result.signal.id`. `accepted` resolves for routing decisions and rejects only when the signal couldn't be routed at all (e.g. misconfigured agent). This replaces the old `accepted: true` boolean and the best-effort top-level `runId`. `result.persisted` stays top-level. `sendNotificationSignal`'s `accepted` is optional (a notification may be dropped by policy with no signal) — read `result.decision` for the policy verdict. ([#17723](https://github.com/mastra-ai/mastra/pull/17723))
+
+  On serverless platforms, when this process/Lambda is the one that woke the run (`action === 'wake'`), it can use the platform's `waitUntil` to keep itself alive until the run it started completes — otherwise the runtime may be frozen or torn down mid-run:
+
+  ```ts
+  const result = agent.sendSignal(signal, { resourceId, threadId });
+  ctx.waitUntil(
+    result.accepted.then(async accepted => {
+      if (accepted.action === 'wake') await accepted.output.consumeStream();
+    }),
+  );
+  ```
+
+  Added a `LeaseProvider` capability (`acquireLease` / `releaseLease` / `renewLease` / `getLeaseOwner` / `transferLease`) — distributed leasing kept separate from event delivery (`PubSub`) — so processes racing to wake the same thread coordinate a single owner. The winner runs the stream; losers forward their signal to it. `EventEmitterPubSub` leases in-memory; `RedisStreamsPubSub` uses `SET NX PX` with owner-verified Lua scripts for release, renew, and transfer; the default `NoopLeaseProvider` always wins, preserving single-process behavior.
+
+  Fixed a cross-process race where, after a run finished, the thread's lease briefly went free before its queued follow-up work started — letting another process win the lease and start a competing run for the same thread. The owner now keeps the lease until all queued work is drained. The lease TTL and renewal interval are overridable for tests via `MASTRA_AGENT_THREAD_LEASE_TTL_MS` and `MASTRA_AGENT_THREAD_LEASE_RENEW_INTERVAL_MS` (production defaults unchanged).
+
+- Moved the tool-permission rule accessors off the Harness onto `session.permissions`. Reading and writing the persisted per-category / per-tool approval policies now lives on the session, next to the state it reads and writes. ([#18200](https://github.com/mastra-ai/mastra/pull/18200))
+
+  **Before**
+
+  ```typescript
+  const rules = harness.getPermissionRules();
+  harness.setPermissionForCategory({ category: 'execute', policy: 'ask' });
+  harness.setPermissionForTool({ toolName: 'dangerous_tool', policy: 'deny' });
+  ```
+
+  **After**
+
+  ```typescript
+  const rules = harness.session.permissions.getRules();
+  await harness.session.permissions.setForCategory({ category: 'execute', policy: 'ask' });
+  await harness.session.permissions.setForTool({ toolName: 'dangerous_tool', policy: 'deny' });
+  ```
+
+  Removed `Harness.getPermissionRules`, `Harness.setPermissionForCategory`, and `Harness.setPermissionForTool`. The setters now return a promise that resolves once the change is persisted to session state, so callers that read the rules back can await the write. Tool-category resolution stays on the harness as `harness.getToolCategory()` since it reads harness config rather than session state.
+
+  `mastracode` is updated to consume the new API: the `/permissions` command reads and sets policies via `session.permissions`.
+
+- Replaced `Harness.getModelName()` and `Harness.getFullModelId()` with session accessors. The full model id is read via the existing `harness.session.model.get()`, and the short display name moves to a new `harness.session.model.displayName()`. ([#18200](https://github.com/mastra-ai/mastra/pull/18200))
+
+  **Before**
+
+  ```typescript
+  const name = harness.getModelName();
+  const fullId = harness.getFullModelId();
+  ```
+
+  **After**
+
+  ```typescript
+  const name = harness.session.model.displayName();
+  const fullId = harness.session.model.get();
+  ```
+
+  `mastracode` is updated to consume the new API: the TUI status line and message renderer now read the model id via `harness.session.model.get()`.
+
+- Moved the subagent model accessors off the Harness onto `session.subagents.model`. Reading and setting the global or per-`agentType` subagent model now lives on the session, next to the state it reads and writes, and is grouped under `session.subagents` to leave room for future subagent settings. ([#18200](https://github.com/mastra-ai/mastra/pull/18200))
+
+  **Before**
+
+  ```typescript
+  const modelId = harness.getSubagentModelId({ agentType: 'explore' });
+  await harness.setSubagentModelId({ modelId: 'anthropic/claude-sonnet-4', agentType: 'explore' });
+  ```
+
+  **After**
+
+  ```typescript
+  const modelId = harness.session.subagents.model.get({ agentType: 'explore' });
+  await harness.session.subagents.model.set({ modelId: 'anthropic/claude-sonnet-4', agentType: 'explore' });
+  ```
+
+  `get()` prefers the per-`agentType` value, then the global subagent model, returning `null` when neither is set. `set()` persists to thread settings and emits a `subagent_model_changed` event. Removed `Harness.getSubagentModelId` and `Harness.setSubagentModelId`.
+
+  `mastracode` is updated to consume the new API: the `/subagents` command, model-pack activation, and startup model restoration read and set subagent models via `session.subagents.model`.
+
+### Patch Changes
+
+- Fixed a crash when the goal judge stream outlives the main agent stream. The `emitJudgeActivity` helper now uses `safeEnqueue` (try/catch guard) instead of raw `controller.enqueue()`, preventing `TypeError: Controller is already closed` when the ReadableStream controller closes before the fire-and-forget judge observer finishes draining. ([#18196](https://github.com/mastra-ai/mastra/pull/18196))
+
+- Fixed Harness runs so they no longer send a default temperature when the caller did not configure model settings. ([#18147](https://github.com/mastra-ai/mastra/pull/18147))
+
+- Fixed browser state updates to attribute click-driven navigation to the assistant when the browser click result reports the new URL. ([#18239](https://github.com/mastra-ai/mastra/pull/18239))
+
 ## 1.45.0
 
 ### Minor Changes

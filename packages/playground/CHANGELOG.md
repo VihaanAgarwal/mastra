@@ -1,5 +1,15 @@
 # @internal/playground
 
+## 1.15.1-alpha.0
+
+### Patch Changes
+
+- Updated dependencies [[`417baae`](https://github.com/mastra-ai/mastra/commit/417baae40b995db5819c845036947f0c27dc1c00), [`4df8c0b`](https://github.com/mastra-ai/mastra/commit/4df8c0b811113ae5da660f4a2a8b69ca825cf6a6), [`d2ab27f`](https://github.com/mastra-ai/mastra/commit/d2ab27fa4a093e45d8d9b313adb5974f21719829), [`417baae`](https://github.com/mastra-ai/mastra/commit/417baae40b995db5819c845036947f0c27dc1c00), [`c0eda2b`](https://github.com/mastra-ai/mastra/commit/c0eda2bcd91a228427314b12c91d8b147f3a739f), [`c0eda2b`](https://github.com/mastra-ai/mastra/commit/c0eda2bcd91a228427314b12c91d8b147f3a739f), [`b13925b`](https://github.com/mastra-ai/mastra/commit/b13925bfa91aa8700f56fa54a9ce707ee7e4ba62), [`da0e991`](https://github.com/mastra-ai/mastra/commit/da0e991ee857d929ea423a9ae0bafffea169b2dc), [`073f910`](https://github.com/mastra-ai/mastra/commit/073f910481e7d94b95ba3830f96531774ae95d33), [`f91235f`](https://github.com/mastra-ai/mastra/commit/f91235fe5a305bfc004afe0ea461abd5b81881e2), [`97eb3ef`](https://github.com/mastra-ai/mastra/commit/97eb3ef37ff5c148106fa68a20ad4773a33cf2cd), [`893bb29`](https://github.com/mastra-ai/mastra/commit/893bb29418dd66056c5361053194dd7f245e26b9), [`8edd4f0`](https://github.com/mastra-ai/mastra/commit/8edd4f0e3788a4c11aed584c18322cdefa2792ac), [`1f97ce5`](https://github.com/mastra-ai/mastra/commit/1f97ce5695463bebb4eaacf501da6fb403e20885), [`64f58c0`](https://github.com/mastra-ai/mastra/commit/64f58c04e78b40137497d47f781e897e416f22a5), [`417baae`](https://github.com/mastra-ai/mastra/commit/417baae40b995db5819c845036947f0c27dc1c00), [`417baae`](https://github.com/mastra-ai/mastra/commit/417baae40b995db5819c845036947f0c27dc1c00), [`417baae`](https://github.com/mastra-ai/mastra/commit/417baae40b995db5819c845036947f0c27dc1c00)]:
+  - @mastra/core@1.46.0-alpha.0
+  - @mastra/playground-ui@35.1.0-alpha.0
+  - @mastra/client-js@1.26.1-alpha.0
+  - @mastra/react@1.1.1-alpha.0
+
 ## 1.15.0
 
 ### Minor Changes

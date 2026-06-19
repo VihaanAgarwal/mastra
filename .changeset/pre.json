@@ -155,7 +155,30 @@
     "@mastra/modal": "0.3.0",
     "@mastra/railway": "0.2.0",
     "@mastra/s3": "0.6.0",
-    "@mastra/vercel": "1.1.0"
+    "@mastra/vercel": "1.1.0",
+    "@mastra/archil": "0.1.0"
   },
-  "changesets": []
+  "changesets": [
+    "brave-melons-rest",
+    "cold-moles-read",
+    "curly-buttons-deny",
+    "curly-turtles-talk",
+    "eleven-islands-boil",
+    "fancy-sides-brush",
+    "fifty-hornets-double",
+    "free-toes-lick",
+    "green-birds-knock",
+    "harness-omit-default-temperature",
+    "heavy-colts-start",
+    "loud-cups-judge",
+    "nice-needles-rush",
+    "orange-beers-sneeze",
+    "petite-mangos-brake",
+    "plain-tools-double",
+    "pubsub-lease-owner-stream",
+    "server-signal-accepted-contract",
+    "silly-walls-attack",
+    "sunny-geckos-carry",
+    "wild-pumas-grow"
+  ]
 }
