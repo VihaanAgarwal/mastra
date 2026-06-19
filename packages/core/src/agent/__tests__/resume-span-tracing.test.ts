@@ -316,7 +316,12 @@ describe('resumed AGENT_RUN span input and trace continuity', () => {
       );
       expect(result.runId).toBeTruthy();
       const sendStreamResumeSpy = vi.spyOn(agent, 'sendStreamResume');
-      const acknowledgement = await agent.sendToolApproval({ resourceId, threadId, toolCallId: toolCallId!, approved: true });
+      const acknowledgement = await agent.sendToolApproval({
+        resourceId,
+        threadId,
+        toolCallId: toolCallId!,
+        approved: true,
+      });
 
       expect(sendStreamResumeSpy).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -368,7 +373,12 @@ describe('resumed AGENT_RUN span input and trace continuity', () => {
         'Timed out waiting for subscribed declined approval continuation',
       );
       const sendStreamResumeSpy = vi.spyOn(agent, 'sendStreamResume');
-      const acknowledgement = await agent.sendToolApproval({ resourceId, threadId, toolCallId: toolCallId!, approved: false });
+      const acknowledgement = await agent.sendToolApproval({
+        resourceId,
+        threadId,
+        toolCallId: toolCallId!,
+        approved: false,
+      });
 
       expect(sendStreamResumeSpy).toHaveBeenCalledWith(
         expect.objectContaining({
