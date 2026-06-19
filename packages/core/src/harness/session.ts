@@ -436,12 +436,20 @@ export class SessionFollowUps {
   }
 }
 
+/** Context explaining why a tool approval was declined. */
+export interface ApprovalDeclineContext {
+  reason?: string;
+  message?: string;
+}
+
 /** The decision a user returns to resolve a parked tool-approval gate. */
 export interface ApprovalDecision {
   /** Whether to run the gated tool or reject it. */
   decision: 'approve' | 'decline';
   /** Optional request context to apply when the gated tool resumes. */
   requestContext?: RequestContext;
+  /** Optional context to pass to the resumed tool when declining. */
+  declineContext?: ApprovalDeclineContext;
 }
 
 /**
@@ -451,6 +459,7 @@ export interface ApprovalDecision {
 export interface ApprovalResponse {
   decision: 'approve' | 'decline' | 'always_allow_category';
   requestContext?: RequestContext;
+  declineContext?: ApprovalDeclineContext;
 }
 
 /**
@@ -495,6 +504,7 @@ export class SessionApproval {
   respond({
     decision,
     requestContext,
+    declineContext,
     onAlwaysAllow,
   }: ApprovalResponse & { onAlwaysAllow?: (toolName: string) => void }): void {
     if (!this.isArmed()) return;
@@ -506,6 +516,7 @@ export class SessionApproval {
     const resolved: ApprovalDecision = {
       decision: decision === 'decline' ? 'decline' : 'approve',
       requestContext,
+      declineContext: decision === 'decline' ? declineContext : undefined,
     };
     this.#resolve?.(resolved);
     this.#resolve = null;
@@ -1541,13 +1552,16 @@ export class Session<TState = unknown> {
   respondToToolApproval({
     decision,
     requestContext,
+    declineContext,
   }: {
     decision: 'approve' | 'decline' | 'always_allow_category';
     requestContext?: RequestContext;
+    declineContext?: ApprovalDeclineContext;
   }): void {
     this.approval.respond({
       decision,
       requestContext,
+      declineContext,
       onAlwaysAllow: toolName => {
         const category = this.#resolveCategory?.(toolName);
         if (category) this.grantCategory(category);
