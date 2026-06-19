@@ -184,9 +184,11 @@ export class AgentThreadStreamRuntime {
   #isThreadBlockingRun(state: AgentThreadRuntimeState, record: AgentThreadRunRecord<any>) {
     return (
       record.output.status === 'running' ||
+      record.output.status === 'suspended' ||
       record.lifecycle === 'suspending' ||
       record.lifecycle === 'suspended' ||
       record.lifecycle === 'resuming' ||
+      !!record.suspension ||
       this.#isSuspendedRun(state, record.runId)
     );
   }
@@ -694,7 +696,10 @@ export class AgentThreadStreamRuntime {
         state.threadRunsById.delete(record.runId);
         state.threadKeysByRunId.delete(record.runId);
       }
-      if (state.activeThreadRunIds.get(key) === record.runId && state.activeThreadStreamIds.get(key) === record.streamId) {
+      if (
+        state.activeThreadRunIds.get(key) === record.runId &&
+        state.activeThreadStreamIds.get(key) === record.streamId
+      ) {
         state.activeThreadRunIds.delete(key);
         state.activeThreadStreamIds.delete(key);
       }
@@ -1071,7 +1076,8 @@ export class AgentThreadStreamRuntime {
       if (data.type === 'run-registered') {
         state.activeThreadRunIds.set(key, data.runId);
         state.activeThreadStreamIds.set(key, data.streamId);
-        const record = state.threadRunsByStreamId.get(data.streamId) ?? createRemoteRun(data.runId, data.streamId, data.streamSeq);
+        const record =
+          state.threadRunsByStreamId.get(data.streamId) ?? createRemoteRun(data.runId, data.streamId, data.streamSeq);
         enqueueRun(record);
         wake();
         return;
@@ -1477,6 +1483,8 @@ export class AgentThreadStreamRuntime {
           this.#watchThreadRunCompletion(state, pubsub, key, activeRecord);
           return { accepted: true, runId, signal };
         }
+
+        return { accepted: false, reason: 'thread-blocked', runId: activeRecord.runId, signal };
       }
 
       if (key && state.activeThreadRunIds.get(key) === runId) {
@@ -1528,6 +1536,17 @@ export class AgentThreadStreamRuntime {
     }
 
     if (state.activeThreadRunIds.has(key)) {
+      const blockingRunId = state.activeThreadRunIds.get(key)!;
+      const blockingRecord = activeRecord ?? state.threadRunsById.get(blockingRunId);
+      if (
+        this.#isSuspendedRun(state, blockingRunId) ||
+        blockingRecord?.output.status === 'suspended' ||
+        blockingRecord?.lifecycle === 'suspended' ||
+        blockingRecord?.lifecycle === 'resuming'
+      ) {
+        return { accepted: false, reason: 'thread-blocked', runId: blockingRunId, signal };
+      }
+
       // Another run owns the thread. Queue this idle-start request and let the watcher
       // launch it only after the active run clears the thread reservation.
       const idleQueue = state.pendingIdleSignalsByThread.get(key) ?? [];

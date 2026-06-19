@@ -59,6 +59,10 @@ import type {
   ToolCategory,
 } from './types';
 
+type HarnessSignalAcceptance =
+  | { accepted: true; runId: string }
+  | { accepted: false; runId: string; reason: 'thread-blocked' };
+
 type HarnessStreamState = {
   currentMessage: HarnessMessage;
   lastFinishedMessage?: HarnessMessage;
@@ -2118,31 +2122,42 @@ export class Harness<TState = {}> {
           tracingOptions?: TracingOptions;
           requestContext?: RequestContext;
         },
-  ): { id: string; type: AgentSignalInput['type']; accepted: Promise<{ accepted: true; runId: string }> } {
+  ): {
+    id: string;
+    type: AgentSignalInput['type'];
+    accepted: Promise<HarnessSignalAcceptance>;
+  } {
     const { tracingContext, tracingOptions, requestContext: requestContextInput } = 'content' in input ? input : {};
     const ifActive = 'content' in input ? input.ifActive : undefined;
     const ifIdle = 'content' in input ? input.ifIdle : undefined;
     const signal = createSignal(
       'content' in input ? { type: 'user', tagName: 'user', contents: input.content } : input,
     );
+    const agent = this.getCurrentAgent();
+    const submittedThreadId = this.#session.thread.getId();
+    const submittedActiveRunId = this.#session.stream.activeRunId();
+    const submittedRunId = this.#session.run.getRunId();
+    const shouldUseActivePath = Boolean(submittedThreadId && (submittedActiveRunId || submittedRunId));
+
     const accepted = Promise.resolve().then(async () => {
       if (!this.#session.thread.getId()) {
         const thread = await this.createThread();
         this.#session.thread.set({ threadId: thread.id });
       }
-      const threadId = this.#session.thread.getId()!;
+      const threadId = submittedThreadId ?? this.#session.thread.getId()!;
 
-      const agent = this.getCurrentAgent();
       await this.ensureAgentThreadSubscription(agent, threadId);
 
-      if (this.#session.run.getRunId() && this.#session.stream.activeRunId()) {
+      if (shouldUseActivePath) {
         const result = agent.sendSignal(signal, {
           resourceId: this.#session.identity.getResourceId(),
           threadId,
           ifActive,
           ifIdle,
         });
-        return { accepted: result.accepted, runId: result.runId };
+        return result.accepted
+          ? { accepted: true as const, runId: result.runId }
+          : { accepted: false as const, runId: result.runId, reason: result.reason };
       }
 
       const streamOptions = await this.buildAgentMessageStreamOptions({
@@ -2157,7 +2172,9 @@ export class Harness<TState = {}> {
         ifActive,
         ifIdle: { ...ifIdle, streamOptions: streamOptions as any },
       });
-      return { accepted: result.accepted, runId: result.runId };
+      return result.accepted
+        ? { accepted: true as const, runId: result.runId }
+        : { accepted: false as const, runId: result.runId, reason: result.reason };
     });
 
     return { id: signal.id, type: signal.type, accepted };

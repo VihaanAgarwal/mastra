@@ -1029,16 +1029,20 @@ describe('Agent signals', () => {
     try {
       const initialRun = readNextRun(iterator);
       await createRun('initial response', initialFinished);
-      await expect(withTimeout(initialRun, 'Timed out waiting for initial stream identity run')).resolves.toMatchObject({
-        value: { runId, text: 'initial response' },
-      });
+      await expect(withTimeout(initialRun, 'Timed out waiting for initial stream identity run')).resolves.toMatchObject(
+        {
+          value: { runId, text: 'initial response' },
+        },
+      );
       expect(subscription.activeRunId()).toBe(runId);
 
       const resumedRun = readNextRun(iterator);
       await createRun('resumed response', resumedFinished);
-      await expect(withTimeout(resumedRun, 'Timed out waiting for resumed stream identity run')).resolves.toMatchObject({
-        value: { runId, text: 'resumed response' },
-      });
+      await expect(withTimeout(resumedRun, 'Timed out waiting for resumed stream identity run')).resolves.toMatchObject(
+        {
+          value: { runId, text: 'resumed response' },
+        },
+      );
 
       const registeredEvents = publishedEvents.filter(event => event?.type === 'run-registered');
       expect(registeredEvents).toHaveLength(2);
@@ -2349,7 +2353,12 @@ describe('Agent signals', () => {
       expect(runtime.getThreadState({ resourceId, threadId }, pubsub)).toBe('active');
       expect(runtime.getActiveThreadRunId({ resourceId, threadId }, pubsub)).toBe(runId);
 
-      const queuedForSuspendedRun = runtime.sendMessage(agent, 'Resume-adjacent input', { resourceId, threadId }, pubsub);
+      const queuedForSuspendedRun = runtime.sendMessage(
+        agent,
+        'Resume-adjacent input',
+        { resourceId, threadId },
+        pubsub,
+      );
       expect(queuedForSuspendedRun).toEqual(expect.objectContaining({ accepted: true, runId }));
       expect((agent as any).stream).not.toHaveBeenCalled();
       expect(runtime.drainPendingSignals(runId, pubsub)[0]).toMatchObject({
@@ -2368,7 +2377,7 @@ describe('Agent signals', () => {
         { resourceId, threadId, ifIdle: { streamOptions: { memory: { resource: resourceId, thread: threadId } } } },
         pubsub,
       );
-      expect(idleWake.accepted).toBe(true);
+      expect(idleWake).toMatchObject({ accepted: false, reason: 'thread-blocked', runId });
       expect((idleAgent as any).stream).not.toHaveBeenCalled();
       expect(runtime.getThreadState({ resourceId, threadId }, pubsub)).toBe('active');
     } finally {

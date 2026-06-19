@@ -153,13 +153,20 @@ export type SendAgentSignalOptions<OUTPUT = unknown> =
 /**
  * @experimental Agent signals are experimental and may change in a future release.
  */
-export interface SendAgentSignalResult {
-  accepted: true;
-  runId: string;
-  signal: CreatedAgentSignal;
-  /** Resolves when a `persist` behavior finishes writing the signal to memory. */
-  persisted?: Promise<void>;
-}
+export type SendAgentSignalResult =
+  | {
+      accepted: true;
+      runId: string;
+      signal: CreatedAgentSignal;
+      /** Resolves when a `persist` behavior finishes writing the signal to memory. */
+      persisted?: Promise<void>;
+    }
+  | {
+      accepted: false;
+      reason: 'thread-blocked';
+      runId: string;
+      signal: CreatedAgentSignal;
+    };
 
 /**
  * @experimental Agent message APIs are experimental and may change in a future release.
