@@ -196,7 +196,9 @@ const useMastraSpeechToText = ({
     if (!agent || startInFlightRef.current || recorderRef.current) return;
 
     startInFlightRef.current = true;
-    const session = sessionRef.current;
+    // Each recording gets its own session so a new start supersedes any
+    // still-pending transcription from a previous recording.
+    const session = ++sessionRef.current;
 
     void recordMicrophoneToFile(handleFinish(session))
       .then(recorder => {
@@ -222,11 +224,19 @@ const useMastraSpeechToText = ({
   };
 
   const stop = () => {
-    sessionRef.current += 1;
-    startInFlightRef.current = false;
-    recorderRef.current?.stop();
+    const recorder = recorderRef.current;
+    if (!recorder) {
+      // No active recording: cancel a start that is still waiting on the mic.
+      sessionRef.current += 1;
+      startInFlightRef.current = false;
+      setState(prev => ({ ...prev, isListening: false }));
+      return;
+    }
+    // MediaRecorder delivers the recorded file via onstop only after stop(),
+    // so this session must stay current for handleFinish to transcribe it.
     recorderRef.current = null;
     setState(prev => ({ ...prev, isListening: false }));
+    recorder.stop();
   };
 
   return {

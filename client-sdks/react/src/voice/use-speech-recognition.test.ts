@@ -308,6 +308,62 @@ describe('useSpeechRecognition (mastra path)', () => {
     await waitFor(() => expect(listenMock).toHaveBeenCalledTimes(1));
   });
 
+  it('transcribes when onstop fires after stop(), the real MediaRecorder order', async () => {
+    installSpeechRecognition();
+    const { result } = renderHook(() => useSpeechRecognition({ agentId: 'agent-1' }), { wrapper });
+
+    await waitFor(() => expect(getSpeakersMock).toHaveBeenCalled());
+
+    await waitFor(() => {
+      act(() => result.current.start());
+      expect(recordMicrophoneToFileMock).toHaveBeenCalled();
+    });
+    await waitFor(() => expect(result.current.isListening).toBe(true));
+
+    // MediaRecorder delivers onstop (and the recorded file) only after stop().
+    act(() => result.current.stop());
+    expect(recorderStopMock).toHaveBeenCalledTimes(1);
+    expect(result.current.isListening).toBe(false);
+
+    await act(async () => {
+      onFinishCapture?.(new File(['audio'], 'rec.webm', { type: 'audio/webm' }));
+    });
+
+    await waitFor(() => expect(listenMock).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(result.current.transcript).toBe('mastra transcript'));
+  });
+
+  it('discards a pending transcription when a new recording starts', async () => {
+    installSpeechRecognition();
+    const { result } = renderHook(() => useSpeechRecognition({ agentId: 'agent-1' }), { wrapper });
+
+    await waitFor(() => expect(getSpeakersMock).toHaveBeenCalled());
+
+    await waitFor(() => {
+      act(() => result.current.start());
+      expect(recordMicrophoneToFileMock).toHaveBeenCalledTimes(1);
+    });
+    await waitFor(() => expect(result.current.isListening).toBe(true));
+
+    act(() => result.current.stop());
+    const firstOnFinish = onFinishCapture;
+
+    // Start a new recording before the first onstop delivers its file.
+    await waitFor(() => {
+      act(() => result.current.start());
+      expect(recordMicrophoneToFileMock).toHaveBeenCalledTimes(2);
+    });
+    await waitFor(() => expect(result.current.isListening).toBe(true));
+
+    await act(async () => {
+      firstOnFinish?.(new File(['audio'], 'rec.webm', { type: 'audio/webm' }));
+    });
+
+    // The superseded recording must not transcribe or clobber the live one.
+    expect(listenMock).not.toHaveBeenCalled();
+    expect(result.current.isListening).toBe(true);
+  });
+
   it('does not transcribe when stop() runs before the recorder resolves', async () => {
     installSpeechRecognition();
     deferRecorder = true;
