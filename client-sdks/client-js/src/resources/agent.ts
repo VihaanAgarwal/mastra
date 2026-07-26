@@ -2068,6 +2068,10 @@ export class Agent extends BaseResource {
       // Use tee() to split the stream into two branches
       const [streamForController, streamForProcessing] = response.body.tee();
 
+      // One decoder for the whole stream so a multi-byte character split across
+      // chunks is carried over instead of being replaced with U+FFFD
+      const controllerDecoder = new TextDecoder();
+
       // Pipe one branch directly to the controller
       const pipePromise = streamForController
         .pipeTo(
@@ -2075,7 +2079,7 @@ export class Agent extends BaseResource {
             async write(chunk) {
               // Filter out terminal markers so the client stream doesn't end before recursion
               try {
-                const text = new TextDecoder().decode(chunk);
+                const text = controllerDecoder.decode(chunk, { stream: true });
                 const lines = text.split('\n\n');
                 const readableLines = lines
                   .filter(line => line.trim() !== '[DONE]' && line.trim() !== 'data: [DONE]')

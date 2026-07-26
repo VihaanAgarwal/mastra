@@ -2193,13 +2193,16 @@ export class MastraClient extends BaseResource {
 
     //using undefined instead of empty string to avoid parsing errors
     let failedChunk: string | undefined = undefined;
+    // One decoder for the whole stream so a multi-byte character split across
+    // chunks is carried over instead of being replaced with U+FFFD
+    const decoder = new TextDecoder();
 
     return response.body.pipeThrough(
       new TransformStream({
         async transform(chunk, controller) {
           try {
             // Decode binary data to text
-            const decoded = new TextDecoder().decode(chunk);
+            const decoded = decoder.decode(chunk, { stream: true });
 
             // Split by record separator
             const chunks = decoded.split('\n\n');

@@ -70,13 +70,16 @@ export class AgentBuilder extends BaseResource {
    */
   private createRecordParserTransform(): TransformStream<ArrayBuffer, { type: string; payload: any }> {
     let failedChunk: string | undefined = undefined;
+    // One decoder for the whole stream so a multi-byte character split across
+    // chunks is carried over instead of being replaced with U+FFFD
+    const decoder = new TextDecoder();
 
     return new TransformStream<ArrayBuffer, { type: string; payload: any }>({
       start() {},
       async transform(chunk, controller) {
         try {
           // Decode binary data to text
-          const decoded = new TextDecoder().decode(chunk);
+          const decoded = decoder.decode(chunk, { stream: true });
 
           // Split by record separator
           const chunks = decoded.split(RECORD_SEPARATOR);
@@ -226,6 +229,9 @@ export class AgentBuilder extends BaseResource {
     let doneReading = false;
     // Buffer to accumulate partial chunks
     let buffer = '';
+    // One decoder for the whole stream so a multi-byte character split across
+    // chunks is carried over instead of being replaced with U+FFFD
+    const decoder = new TextDecoder();
 
     try {
       while (!doneReading) {
@@ -238,7 +244,7 @@ export class AgentBuilder extends BaseResource {
 
         try {
           // Decode binary data to text
-          const decoded = value ? new TextDecoder().decode(value) : '';
+          const decoded = value ? decoder.decode(value, { stream: true }) : '';
 
           // Split the combined buffer and new data by record separator
           const chunks = (buffer + decoded).split(RECORD_SEPARATOR);
